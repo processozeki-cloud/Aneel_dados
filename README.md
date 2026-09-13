@@ -42,6 +42,7 @@ recentes publicados pela ANEEL.
 ## Estrutura
 
 Aneel_dados/
+
 ├── atualizar_dados.py # pipeline completo (baixa, agrega, envia) — usado na automação
 
 ├── explorar.py # script de exploração inicial dos dados
@@ -53,7 +54,9 @@ Aneel_dados/
 ├── requirements.txt
 
 ├── .github/workflows/
+
 │ └── atualizacao-mensal.yml
+
 └── dashboard/ # aplicação Next.js
 
 ├── app/page.tsx
