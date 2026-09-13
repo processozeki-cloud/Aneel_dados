@@ -43,13 +43,19 @@ recentes publicados pela ANEEL.
 
 Aneel_dados/
 ├── atualizar_dados.py # pipeline completo (baixa, agrega, envia) — usado na automação
+
 ├── explorar.py # script de exploração inicial dos dados
+
 ├── agregar.py # primeira versão da agregação (manual)
+
 ├── enviar.py # primeira versão do envio ao Supabase (manual)
+
 ├── requirements.txt
+
 ├── .github/workflows/
 │ └── atualizacao-mensal.yml
 └── dashboard/ # aplicação Next.js
+
 ├── app/page.tsx
 └── lib/supabase.ts
 
