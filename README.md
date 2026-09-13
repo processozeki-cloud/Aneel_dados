@@ -60,6 +60,7 @@ Aneel_dados/
 └── dashboard/ # aplicação Next.js
 
 ├── app/page.tsx
+
 └── lib/supabase.ts
 
 
