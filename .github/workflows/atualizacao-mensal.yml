@@ -1,0 +1,27 @@
+name: Atualização mensal dos dados da ANEEL
+
+on:
+  schedule:
+    - cron: '0 6 5 * *'  # todo dia 5 de cada mês, às 6h UTC
+  workflow_dispatch:      # permite rodar manualmente também
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Rodar script de atualização
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python atualizar_dados.py
