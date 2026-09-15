@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import GraficoEvolucao from '@/components/GraficoEvolucao'
 
 export default async function Home({
   searchParams,
@@ -15,27 +16,33 @@ export default async function Home({
     municipiosData?.map((m) => [m.cod_municipio_ibge, m]) ?? []
   )
 
-  let query = supabase
-    .from('resumo_interrupcoes')
-    .select('*')
+  const codigosPorNome = busca
+    ? municipiosData
+        ?.filter((m) => m.nome.toLowerCase().includes(busca.toLowerCase()))
+        .map((m) => m.cod_municipio_ibge) ?? []
+    : []
+
+  function aplicarFiltro(q: any) {
+    if (!busca) return q
+    if (codigosPorNome.length > 0) {
+      return q.or(
+        `nome_distribuidora.ilike.%${busca}%,cod_municipio_ibge.in.(${codigosPorNome.join(',')})`
+      )
+    }
+    return q.ilike('nome_distribuidora', `%${busca}%`)
+  }
+
+  // Query 1: as 50 linhas exibidas na tabela (ordenadas por relevância)
+  const { data, error } = await aplicarFiltro(
+    supabase.from('resumo_interrupcoes').select('*')
+  )
     .order('num_interrupcoes', { ascending: false })
     .limit(50)
 
-  if (busca) {
-    const codigosPorNome = municipiosData
-      ?.filter((m) => m.nome.toLowerCase().includes(busca.toLowerCase()))
-      .map((m) => m.cod_municipio_ibge) ?? []
-
-    if (codigosPorNome.length > 0) {
-      query = query.or(
-        `nome_distribuidora.ilike.%${busca}%,cod_municipio_ibge.in.(${codigosPorNome.join(',')})`
-      )
-    } else {
-      query = query.ilike('nome_distribuidora', `%${busca}%`)
-    }
-  }
-
-  const { data, error } = await query
+  // Query 2: todos os registros que batem no filtro, só pra somar por mês (gráfico)
+  const { data: dadosParaGrafico } = await aplicarFiltro(
+    supabase.from('resumo_interrupcoes').select('ano_mes, num_interrupcoes')
+  ).limit(5000)
 
   if (error) {
     return <div className="p-8 text-red-600">Erro ao buscar dados: {error.message}</div>
@@ -46,6 +53,16 @@ export default async function Home({
   const duracaoMedia = data && data.length > 0
     ? Math.round(data.reduce((soma, l) => soma + l.duracao_media_minutos, 0) / data.length)
     : 0
+
+  // Agrupando por mês pra alimentar o gráfico
+  const somaPorMes = new Map<string, number>()
+  dadosParaGrafico?.forEach((linha) => {
+    const atual = somaPorMes.get(linha.ano_mes) ?? 0
+    somaPorMes.set(linha.ano_mes, atual + linha.num_interrupcoes)
+  })
+  const pontosGrafico = Array.from(somaPorMes.entries())
+    .map(([mes, interrupcoes]) => ({ mes, interrupcoes }))
+    .sort((a, b) => a.mes.localeCompare(b.mes))
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 p-8">
@@ -83,6 +100,8 @@ export default async function Home({
             <p className="text-2xl font-semibold">{duracaoMedia} min</p>
           </div>
         </div>
+
+        <GraficoEvolucao dados={pontosGrafico} />
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
