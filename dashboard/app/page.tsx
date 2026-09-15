@@ -1,6 +1,23 @@
 import { supabase } from '@/lib/supabase'
 import GraficoEvolucao from '@/components/GraficoEvolucao'
 
+interface LinhaResumo {
+  id: number
+  cod_municipio_ibge: string
+  nome_distribuidora: string
+  ano_mes: string
+  num_interrupcoes: number
+  consumidores_afetados: number | null
+  duracao_media_minutos: number
+  causa_principal: string | null
+}
+
+interface Municipio {
+  cod_municipio_ibge: string
+  nome: string
+  uf: string
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -11,15 +28,16 @@ export default async function Home({
   const { data: municipiosData } = await supabase
     .from('municipios')
     .select('cod_municipio_ibge, nome, uf')
+    .returns<Municipio[]>()
 
   const mapaMunicipios = new Map(
-    municipiosData?.map((m) => [m.cod_municipio_ibge, m]) ?? []
+    (municipiosData ?? []).map((m) => [m.cod_municipio_ibge, m])
   )
 
   const codigosPorNome = busca
-    ? municipiosData
-        ?.filter((m) => m.nome.toLowerCase().includes(busca.toLowerCase()))
-        .map((m) => m.cod_municipio_ibge) ?? []
+    ? (municipiosData ?? [])
+        .filter((m) => m.nome.toLowerCase().includes(busca.toLowerCase()))
+        .map((m) => m.cod_municipio_ibge)
     : []
 
   function aplicarFiltro(q: any) {
@@ -32,31 +50,34 @@ export default async function Home({
     return q.ilike('nome_distribuidora', `%${busca}%`)
   }
 
-  // Query 1: as 50 linhas exibidas na tabela (ordenadas por relevância)
-  const { data, error } = await aplicarFiltro(
-    supabase.from('resumo_interrupcoes').select('*')
-  )
-    .order('num_interrupcoes', { ascending: false })
-    .limit(50)
+  const { data: dataRaw, error } = await aplicarFiltro(
+  supabase.from('resumo_interrupcoes').select('*')
+)
+  .order('num_interrupcoes', { ascending: false })
+  .limit(50)
 
-  // Query 2: todos os registros que batem no filtro, só pra somar por mês (gráfico)
-  const { data: dadosParaGrafico } = await aplicarFiltro(
-    supabase.from('resumo_interrupcoes').select('ano_mes, num_interrupcoes')
-  ).limit(5000)
+  const data = dataRaw as LinhaResumo[] | null
+
+  const { data: dadosParaGraficoRaw } = await aplicarFiltro(
+  supabase.from('resumo_interrupcoes').select('ano_mes, num_interrupcoes')
+).limit(5000)
+
+  const dadosParaGrafico = dadosParaGraficoRaw as { ano_mes: string; num_interrupcoes: number }[] | null
 
   if (error) {
     return <div className="p-8 text-red-600">Erro ao buscar dados: {error.message}</div>
   }
 
-  const totalInterrupcoes = data?.reduce((soma, l) => soma + l.num_interrupcoes, 0) ?? 0
-  const totalAfetados = data?.reduce((soma, l) => soma + (l.consumidores_afetados ?? 0), 0) ?? 0
-  const duracaoMedia = data && data.length > 0
-    ? Math.round(data.reduce((soma, l) => soma + l.duracao_media_minutos, 0) / data.length)
+  const linhas: LinhaResumo[] = data ?? []
+
+  const totalInterrupcoes = linhas.reduce((soma: number, l: LinhaResumo) => soma + l.num_interrupcoes, 0)
+  const totalAfetados = linhas.reduce((soma: number, l: LinhaResumo) => soma + (l.consumidores_afetados ?? 0), 0)
+  const duracaoMedia = linhas.length > 0
+    ? Math.round(linhas.reduce((soma: number, l: LinhaResumo) => soma + l.duracao_media_minutos, 0) / linhas.length)
     : 0
 
-  // Agrupando por mês pra alimentar o gráfico
   const somaPorMes = new Map<string, number>()
-  dadosParaGrafico?.forEach((linha) => {
+  ;(dadosParaGrafico ?? []).forEach((linha: { ano_mes: string; num_interrupcoes: number }) => {
     const atual = somaPorMes.get(linha.ano_mes) ?? 0
     somaPorMes.set(linha.ano_mes, atual + linha.num_interrupcoes)
   })
@@ -117,7 +138,7 @@ export default async function Home({
               </tr>
             </thead>
             <tbody>
-              {data?.map((linha, i) => {
+              {linhas.map((linha: LinhaResumo, i: number) => {
                 const municipio = mapaMunicipios.get(linha.cod_municipio_ibge)
                 return (
                   <tr
