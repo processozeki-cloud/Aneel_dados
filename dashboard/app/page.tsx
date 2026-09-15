@@ -27,9 +27,11 @@ type ColunaOrdenavel = typeof COLUNAS_ORDENAVEIS[number]
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string; mes?: string; ordenar?: string; direcao?: string }>
+  searchParams: Promise<{ busca?: string; mes?: string; ordenar?: string; direcao?: string; pagina?: string }>
 }) {
-  const { busca, mes, ordenar, direcao } = await searchParams
+  const { busca, mes, ordenar, direcao, pagina } = await searchParams
+  const paginaAtual = Math.max(1, parseInt(pagina ?? '1', 10) || 1)
+  const ITENS_POR_PAGINA = 20
 
   const colunaOrdenacao: ColunaOrdenavel = COLUNAS_ORDENAVEIS.includes(ordenar as ColunaOrdenavel)
     ? (ordenar as ColunaOrdenavel)
@@ -43,6 +45,16 @@ export default async function Home({
     if (mes) params.set('mes', mes)
     params.set('ordenar', coluna)
     params.set('direcao', novaDirecao)
+    return `/?${params.toString()}`
+  }
+
+  function linkPagina(novaPagina: number) {
+    const params = new URLSearchParams()
+    if (busca) params.set('busca', busca)
+    if (mes) params.set('mes', mes)
+    if (ordenar) params.set('ordenar', ordenar)
+    if (direcao) params.set('direcao', direcao)
+    params.set('pagina', String(novaPagina))
     return `/?${params.toString()}`
   }
 
@@ -92,11 +104,16 @@ export default async function Home({
     return query
   }
 
-  const { data: dataRaw, error } = await aplicarFiltro(
-    supabase.from('resumo_interrupcoes').select('*')
+  const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA
+  const fim = inicio + ITENS_POR_PAGINA - 1
+
+  const { data: dataRaw, error, count } = await aplicarFiltro(
+    supabase.from('resumo_interrupcoes').select('*', { count: 'exact' })
   )
     .order(colunaOrdenacao, { ascending: direcaoOrdenacao === 'asc' })
-    .limit(50)
+    .range(inicio, fim)
+
+  const totalPaginas = Math.max(1, Math.ceil((count ?? 0) / ITENS_POR_PAGINA))
 
   const data = dataRaw as LinhaResumo[] | null
 
@@ -131,11 +148,15 @@ export default async function Home({
 
   const linhas: LinhaResumo[] = data ?? []
 
-  const totalInterrupcoes = linhas.reduce((soma: number, l: LinhaResumo) => soma + l.num_interrupcoes, 0)
-  const totalAfetados = linhas.reduce((soma: number, l: LinhaResumo) => soma + (l.consumidores_afetados ?? 0), 0)
-  const duracaoMedia = linhas.length > 0
-    ? Math.round(linhas.reduce((soma: number, l: LinhaResumo) => soma + l.duracao_media_minutos, 0) / linhas.length)
-    : 0
+  const { data: resumoGeralRaw } = await supabase.rpc('resumo_geral', {
+    filtro: busca || null,
+    mes: mes || null,
+  })
+  const resumoGeral = (resumoGeralRaw as { total_interrupcoes: number; total_afetados: number; duracao_media: number }[] | null)?.[0]
+
+  const totalInterrupcoes = resumoGeral?.total_interrupcoes ?? 0
+  const totalAfetados = resumoGeral?.total_afetados ?? 0
+  const duracaoMedia = Math.round(resumoGeral?.duracao_media ?? 0)
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 p-8">
@@ -247,6 +268,23 @@ export default async function Home({
             </table>
           )}
         </div>
+                {totalPaginas > 1 && (
+          <div className="flex items-center justify-between mt-4 text-sm text-neutral-400">
+            <span>Página {paginaAtual} de {totalPaginas} ({count?.toLocaleString('pt-BR')} resultados)</span>
+            <div className="flex gap-2">
+              {paginaAtual > 1 && (
+                <Link href={linkPagina(paginaAtual - 1)} className="px-3 py-1 border border-neutral-700 rounded hover:bg-neutral-800">
+                  Anterior
+                </Link>
+              )}
+              {paginaAtual < totalPaginas && (
+                <Link href={linkPagina(paginaAtual + 1)} className="px-3 py-1 border border-neutral-700 rounded hover:bg-neutral-800">
+                  Próxima
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   )
