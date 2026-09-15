@@ -88,11 +88,14 @@ export default async function Home({
   limite: 5,
   })
 
-const { data: melhores } = await supabase.rpc('ranking_melhores', {
+const { data: melhores, error: erroMelhores } = await supabase.rpc('ranking_melhores', {
   filtro: busca || null,
   mes: mes || null,
   limite: 5,
-  })
+})
+if (erroMelhores) {
+  console.log('ERRO NO RANKING MELHORES:', erroMelhores)
+}
 
 const { data: causasRaw } = await supabase.rpc('distribuicao_causas', {
   filtro: busca || null,
