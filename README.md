@@ -53,23 +53,21 @@ Não usei IA como funcionalidade do produto em si, por exemplo resumos automáti
 ## Estrutura
 
 Aneel_dados/
-├── atualizar_dados.py # pipeline completo (baixa, agrega, envia), usado na automação
-├── carregar_municipios.py # popula a tabela de nomes de município via API do IBGE (roda uma vez)
-├── explorar.py # script de exploração inicial dos dados
-├── agregar.py # primeira versão da agregação (manual)
-├── enviar.py # primeira versão do envio ao Supabase (manual)
-├── requirements.txt
-├── .github/workflows/
-│ └── atualizacao-mensal.yml
-└── dashboard/ # aplicação Next.js
-├── app/page.tsx # página principal
-├── app/layout.tsx # metadados da página
-├── app/loading.tsx # estado de carregamento
-├── components/
-│ ├── GraficoEvolucao.tsx
-│ ├── GraficoCausas.tsx
-│ └── TabelaRanking.tsx
-└── lib/supabase.ts
+- atualizar_dados.py — pipeline completo (baixa, agrega, envia), usado na automação
+- carregar_municipios.py — popula a tabela de nomes de município via API do IBGE (roda uma vez)
+- explorar.py — script de exploração inicial dos dados
+- agregar.py — primeira versão da agregação (manual)
+- enviar.py — primeira versão do envio ao Supabase (manual)
+- requirements.txt
+- .github/workflows/atualizacao-mensal.yml
+- dashboard/ — aplicação Next.js
+  - app/page.tsx — página principal
+  - app/layout.tsx — metadados da página
+  - app/loading.tsx — estado de carregamento
+  - components/GraficoEvolucao.tsx
+  - components/GraficoCausas.tsx
+  - components/TabelaRanking.tsx
+  - lib/supabase.ts
 
 
 ## Como rodar do zero
