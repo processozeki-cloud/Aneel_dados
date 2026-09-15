@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import GraficoEvolucao from '@/components/GraficoEvolucao'
 import GraficoCausas from '@/components/GraficoCausas'
@@ -20,12 +21,35 @@ interface Municipio {
   uf: string
 }
 
+const COLUNAS_ORDENAVEIS = ['num_interrupcoes', 'consumidores_afetados', 'duracao_media_minutos'] as const
+type ColunaOrdenavel = typeof COLUNAS_ORDENAVEIS[number]
+
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string; mes?: string }>
+  searchParams: Promise<{ busca?: string; mes?: string; ordenar?: string; direcao?: string }>
 }) {
-  const { busca, mes } = await searchParams
+  const { busca, mes, ordenar, direcao } = await searchParams
+
+  const colunaOrdenacao: ColunaOrdenavel = COLUNAS_ORDENAVEIS.includes(ordenar as ColunaOrdenavel)
+    ? (ordenar as ColunaOrdenavel)
+    : 'num_interrupcoes'
+  const direcaoOrdenacao: 'asc' | 'desc' = direcao === 'asc' ? 'asc' : 'desc'
+
+  function linkOrdenacao(coluna: ColunaOrdenavel) {
+    const novaDirecao = colunaOrdenacao === coluna && direcaoOrdenacao === 'desc' ? 'asc' : 'desc'
+    const params = new URLSearchParams()
+    if (busca) params.set('busca', busca)
+    if (mes) params.set('mes', mes)
+    params.set('ordenar', coluna)
+    params.set('direcao', novaDirecao)
+    return `/?${params.toString()}`
+  }
+
+  function setaOrdenacao(coluna: ColunaOrdenavel) {
+    if (colunaOrdenacao !== coluna) return ''
+    return direcaoOrdenacao === 'desc' ? ' ↓' : ' ↑'
+  }
 
   const { data: municipiosData } = await supabase
     .from('municipios')
@@ -36,7 +60,6 @@ export default async function Home({
     (municipiosData ?? []).map((m) => [m.cod_municipio_ibge, m])
   )
 
-  // Busca os meses disponíveis, pra popular o <select>
   const { data: mesesRaw } = await supabase
     .from('resumo_interrupcoes')
     .select('ano_mes')
@@ -72,38 +95,35 @@ export default async function Home({
   const { data: dataRaw, error } = await aplicarFiltro(
     supabase.from('resumo_interrupcoes').select('*')
   )
-    .order('num_interrupcoes', { ascending: false })
+    .order(colunaOrdenacao, { ascending: direcaoOrdenacao === 'asc' })
     .limit(50)
 
   const data = dataRaw as LinhaResumo[] | null
 
-  // Gráfico de evolução agora vem direto da função SQL (muito mais rápido)
   const { data: pontosGraficoRaw } = await supabase.rpc('evolucao_mensal', {
     filtro: busca || null,
     mes: mes || null,
   })
-  const { data: piores } = await supabase.rpc('ranking_piores', {
-  filtro: busca || null,
-  mes: mes || null,
-  limite: 5,
-  })
-
-const { data: melhores, error: erroMelhores } = await supabase.rpc('ranking_melhores', {
-  filtro: busca || null,
-  mes: mes || null,
-  limite: 5,
-})
-if (erroMelhores) {
-  console.log('ERRO NO RANKING MELHORES:', erroMelhores)
-}
-
-const { data: causasRaw } = await supabase.rpc('distribuicao_causas', {
-  filtro: busca || null,
-  mes: mes || null,
-  })
-const causas = (causasRaw as { causa: string; total: number }[] | null) ?? []
   const pontosGrafico = (pontosGraficoRaw as { ano_mes: string; total_interrupcoes: number }[] | null ?? [])
     .map((p) => ({ mes: p.ano_mes, interrupcoes: p.total_interrupcoes }))
+
+  const { data: piores } = await supabase.rpc('ranking_piores', {
+    filtro: busca || null,
+    mes: mes || null,
+    limite: 5,
+  })
+
+  const { data: melhores } = await supabase.rpc('ranking_melhores', {
+    filtro: busca || null,
+    mes: mes || null,
+    limite: 5,
+  })
+
+  const { data: causasRaw } = await supabase.rpc('distribuicao_causas', {
+    filtro: busca || null,
+    mes: mes || null,
+  })
+  const causas = (causasRaw as { causa: string; total: number }[] | null) ?? []
 
   if (error) {
     return <div className="p-8 text-red-600">Erro ao buscar dados: {error.message}</div>
@@ -165,6 +185,7 @@ const causas = (causasRaw as { causa: string; total: number }[] | null) ?? []
         </div>
 
         <GraficoEvolucao dados={pontosGrafico} />
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           <TabelaRanking titulo="Piores (mais interrupções)" dados={(piores ?? []) as any} />
           <TabelaRanking titulo="Melhores (menos interrupções)" dados={(melhores ?? []) as any} />
@@ -172,41 +193,59 @@ const causas = (causasRaw as { causa: string; total: number }[] | null) ?? []
 
         <GraficoCausas dados={causas} />
 
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-neutral-800/50 text-left text-neutral-400">
-                <th className="p-3 font-medium">Cidade / UF</th>
-                <th className="p-3 font-medium">Distribuidora</th>
-                <th className="p-3 font-medium">Mês</th>
-                <th className="p-3 font-medium text-right">Interrupções</th>
-                <th className="p-3 font-medium text-right">Afetados</th>
-                <th className="p-3 font-medium text-right">Duração média</th>
-                <th className="p-3 font-medium">Causa principal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((linha: LinhaResumo, i: number) => {
-                const municipio = mapaMunicipios.get(linha.cod_municipio_ibge)
-                return (
-                  <tr
-                    key={linha.id}
-                    className={i % 2 === 0 ? 'bg-neutral-900' : 'bg-neutral-900/50'}
-                  >
-                    <td className="p-3">
-                      {municipio ? `${municipio.nome} / ${municipio.uf}` : linha.cod_municipio_ibge}
-                    </td>
-                    <td className="p-3 text-neutral-300">{linha.nome_distribuidora}</td>
-                    <td className="p-3 text-neutral-400">{linha.ano_mes}</td>
-                    <td className="p-3 text-right font-medium">{linha.num_interrupcoes.toLocaleString('pt-BR')}</td>
-                    <td className="p-3 text-right text-neutral-300">{(linha.consumidores_afetados ?? 0).toLocaleString('pt-BR')}</td>
-                    <td className="p-3 text-right text-neutral-300">{Math.round(linha.duracao_media_minutos)} min</td>
-                    <td className="p-3 text-neutral-400">{linha.causa_principal}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-x-auto">
+          {linhas.length === 0 ? (
+            <p className="p-8 text-center text-neutral-400">
+              Nenhum resultado encontrado{busca ? ` para "${busca}"` : ''}.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-neutral-800/50 text-left text-neutral-400">
+                  <th className="p-3 font-medium">Cidade / UF</th>
+                  <th className="p-3 font-medium">Distribuidora</th>
+                  <th className="p-3 font-medium">Mês</th>
+                  <th className="p-3 font-medium text-right">
+                    <Link href={linkOrdenacao('num_interrupcoes')} className="hover:text-neutral-100">
+                      Interrupções{setaOrdenacao('num_interrupcoes')}
+                    </Link>
+                  </th>
+                  <th className="p-3 font-medium text-right">
+                    <Link href={linkOrdenacao('consumidores_afetados')} className="hover:text-neutral-100">
+                      Afetados{setaOrdenacao('consumidores_afetados')}
+                    </Link>
+                  </th>
+                  <th className="p-3 font-medium text-right">
+                    <Link href={linkOrdenacao('duracao_media_minutos')} className="hover:text-neutral-100">
+                      Duração média{setaOrdenacao('duracao_media_minutos')}
+                    </Link>
+                  </th>
+                  <th className="p-3 font-medium">Causa principal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((linha: LinhaResumo, i: number) => {
+                  const municipio = mapaMunicipios.get(linha.cod_municipio_ibge)
+                  return (
+                    <tr
+                      key={linha.id}
+                      className={i % 2 === 0 ? 'bg-neutral-900' : 'bg-neutral-900/50'}
+                    >
+                      <td className="p-3">
+                        {municipio ? `${municipio.nome} / ${municipio.uf}` : linha.cod_municipio_ibge}
+                      </td>
+                      <td className="p-3 text-neutral-300">{linha.nome_distribuidora}</td>
+                      <td className="p-3 text-neutral-400">{linha.ano_mes}</td>
+                      <td className="p-3 text-right font-medium">{linha.num_interrupcoes.toLocaleString('pt-BR')}</td>
+                      <td className="p-3 text-right text-neutral-300">{(linha.consumidores_afetados ?? 0).toLocaleString('pt-BR')}</td>
+                      <td className="p-3 text-right text-neutral-300">{Math.round(linha.duracao_media_minutos)} min</td>
+                      <td className="p-3 text-neutral-400">{linha.causa_principal}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </main>
