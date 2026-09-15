@@ -1,24 +1,16 @@
 # Interrupções de Energia Elétrica — ANEEL
 
-Dashboard com dados de interrupções de energia elétrica por município e
-distribuidora, a partir da base pública da ANEEL, com atualização automática
-mensal.
+Dashboard com dados de interrupções de energia elétrica por município e distribuidora, a partir da base pública da ANEEL, com atualização automática mensal.
 
-🔗 **Dashboard em produção:** https://aneel-dados.vercel.app/
+Dashboard em produção: https://aneel-dados.vercel.app/
 
 ## Problema
 
-A ANEEL publica dados abertos sobre todas as interrupções de energia nas redes
-de distribuição do país, mas em arquivos CSV brutos, nacionais, com milhões de
-linhas por ano. Não dá pra usar isso diretamente pra responder uma pergunta
-simples como "como está o fornecimento de energia na minha cidade".
+A ANEEL publica dados abertos sobre todas as interrupções de energia nas redes de distribuição do país, mas em arquivos CSV brutos, nacionais, com milhões de linhas por ano. Não dá pra usar isso diretamente pra responder uma pergunta simples como "como está o fornecimento de energia na minha cidade".
 
 ## Solução
 
-Um pipeline que baixa os dados da ANEEL, agrega por município + distribuidora +
-mês, e mostra isso num dashboard com busca, filtros, gráficos e rankings. O
-pipeline roda automaticamente todo mês via GitHub Actions, então o dashboard
-sempre reflete os dados mais recentes publicados pela ANEEL.
+Um pipeline que baixa os dados da ANEEL, agrega por município, distribuidora e mês, e mostra isso num dashboard com busca, filtros, gráficos e rankings. O pipeline roda automaticamente todo mês via GitHub Actions, então o dashboard sempre reflete os dados mais recentes publicados pela ANEEL.
 
 ### Funcionalidades
 
@@ -28,61 +20,40 @@ sempre reflete os dados mais recentes publicados pela ANEEL.
 - Gráfico de evolução mensal das interrupções
 - Ranking das cidades/distribuidoras com mais e com menos interrupções
 - Gráfico de distribuição por causa principal
-- Tabela detalhada, ordenável por coluna, com estado de carregamento e mensagem
-  para buscas sem resultado
+- Tabela detalhada, ordenável por coluna, com estado de carregamento e mensagem para buscas sem resultado
 
 ## Decisões técnicas
 
-- **Agregação em vez de dado bruto.** Um único ano de dados tem ~6 milhões de
-  linhas. Guardar isso cru no banco seria caro e lento pra consultar. O
-  pipeline agrega por município/distribuidora/mês na ingestão, reduzindo pra
-  ~38 mil linhas.
-- **Filtro de dados inconsistentes.** Encontrei ~96 mil registros (todos da
-  Companhia Energética de Goiás) com o código IBGE do município incompleto
-  (menos de 7 dígitos, fora do padrão). Esses registros são filtrados antes da
-  agregação pra não distorcer os números por município.
-- **Nomes de cidade via API do IBGE.** A ANEEL só disponibiliza o código IBGE
-  do município, não o nome. Uma tabela `municipios` é carregada uma vez a
-  partir da API pública do IBGE e usada para exibir nome/UF no dashboard. Como
-  a ligação é feita na aplicação (não por chave estrangeira no banco), um
-  eventual código sem correspondência não quebra o dashboard — ele
-  simplesmente mostra o código bruto.
-- **Limitação conhecida: 5 códigos de município sem nome.** De ~5.528 códigos
-  distintos usados nos dados de 2026, 5 não têm correspondência na base atual
-  de municípios do IBGE (prováveis diferenças de cadastro entre as fontes,
-  possivelmente municípios recém-criados ou códigos de conjunto elétrico que
-  não mapeiam 1:1 para uma divisão municipal). Esses casos representam uma
-  fração muito pequena do total e foram documentados em vez de investigados
-  caso a caso, para priorizar a entrega dentro do prazo.
-- **Ranking com piso estatístico.** Um ranking simples de "menos interrupções"
-  favorece cidades pequenas com poucos registros, o que não reflete
-  necessariamente boa qualidade de fornecimento. Por isso, o ranking de
-  melhores só considera cidades/distribuidoras que já afetaram pelo menos
-  5.000 consumidores no total, um piso que garante volume de dado suficiente
-  para a comparação fazer sentido.
-- **Causa principal é uma aproximação.** A coluna de causa guarda a causa mais
-  frequente dentro de cada grupo (cidade+distribuidora+mês), não a contagem
-  exata de cada causa individual. O gráfico de causas, portanto, é uma visão
-  aproximada, não um número exato.
-- **Cálculos agregados no banco, não na aplicação.** Ranking, evolução mensal
-  e distribuição de causas são calculados por funções SQL no Postgres
-  (Supabase), em vez de baixar todas as linhas e somar em JavaScript — mais
-  rápido e escalável conforme os dados crescem.
-- **URL do arquivo resolvida em tempo de execução.** O link do ZIP muda todo
-  ano (ex: `interrupcoes-energia-eletrica-2026.zip`). Em vez de fixar isso no
-  código, o script consulta a API do catálogo (CKAN) da ANEEL e pega o arquivo
-  do ano atual dinamicamente, então não precisa editar nada quando o ano virar.
-- **Automação via GitHub Actions.** Um workflow agendado roda o pipeline todo
-  dia 5 de cada mês (dando uma folga pra ANEEL publicar os dados do mês
-  anterior). Também dá pra rodar manualmente pela aba Actions.
-- **Stack:** Python/pandas pro ETL, Supabase (Postgres) como banco, Next.js
-  pro dashboard, Recharts para os gráficos, Vercel pra hospedagem, GitHub
-  Actions pra automação.
+**Agregação em vez de dado bruto.** Um único ano de dados tem cerca de 6 milhões de linhas. Guardar isso cru no banco seria caro e lento pra consultar. O pipeline agrega por município, distribuidora e mês na ingestão, reduzindo pra cerca de 38 mil linhas.
+
+**Filtro de dados inconsistentes.** Encontrei cerca de 96 mil registros, todos da Companhia Energética de Goiás, com o código IBGE do município incompleto (menos de 7 dígitos, fora do padrão). Esses registros são filtrados antes da agregação pra não distorcer os números por município.
+
+**Nomes de cidade via API do IBGE.** A ANEEL só disponibiliza o código IBGE do município, não o nome. Uma tabela `municipios` é carregada uma vez a partir da API pública do IBGE e usada pra exibir nome e UF no dashboard. A ligação é feita na aplicação, não por chave estrangeira no banco, então um eventual código sem correspondência não quebra o dashboard, ele só mostra o código bruto.
+
+**Limitação conhecida: 5 códigos de município sem nome.** De cerca de 5.528 códigos distintos usados nos dados de 2026, 5 não têm correspondência na base atual de municípios do IBGE. Podem ser municípios recém-criados ou códigos de conjunto elétrico que não mapeiam 1:1 pra uma divisão municipal. É uma fração muito pequena do total, e optei por documentar em vez de investigar caso a caso, pra priorizar a entrega dentro do prazo.
+
+**Ranking com piso estatístico.** Um ranking simples de "menos interrupções" favorece cidades pequenas com poucos registros, o que não reflete necessariamente boa qualidade de fornecimento. Por isso o ranking de melhores só considera cidades/distribuidoras que já afetaram pelo menos 5.000 consumidores no total, um piso que garante volume de dado suficiente pra a comparação fazer sentido.
+
+**Causa principal é uma aproximação.** A coluna de causa guarda a causa mais frequente dentro de cada grupo (cidade, distribuidora e mês), não a contagem exata de cada causa individual. O gráfico de causas é uma visão aproximada, não um número exato.
+
+**Cálculos agregados no banco, não na aplicação.** Ranking, evolução mensal e distribuição de causas são calculados por funções SQL no Postgres (Supabase), em vez de baixar todas as linhas e somar em JavaScript. Fica mais rápido e escala melhor conforme os dados crescem.
+
+**URL do arquivo resolvida em tempo de execução.** O link do ZIP muda todo ano (ex: `interrupcoes-energia-eletrica-2026.zip`). Em vez de fixar isso no código, o script consulta a API do catálogo (CKAN) da ANEEL e pega o arquivo do ano atual dinamicamente. Assim não precisa editar nada quando o ano virar.
+
+**Automação via GitHub Actions.** Um workflow agendado roda o pipeline todo dia 5 de cada mês, dando uma folga pra ANEEL publicar os dados do mês anterior. Também dá pra rodar manualmente pela aba Actions.
+
+**Stack:** Python e pandas pro ETL, Supabase (Postgres) como banco, Next.js pro dashboard, Recharts pros gráficos, Vercel pra hospedagem, GitHub Actions pra automação.
+
+## Sobre o uso de Inteligência Artificial
+
+Usei o Claude (Anthropic) como parceiro de desenvolvimento ao longo de todo o projeto, pra gerar código, sugerir abordagens e ajudar a debugar problemas. As decisões de arquitetura, o recorte do problema, a identificação de inconsistências nos dados (o bug de código de município da Companhia Energética de Goiás, a distorção estatística no ranking de melhores) e os ajustes de prioridade dentro do prazo foram feitos por mim.
+
+Não usei IA como funcionalidade do produto em si, por exemplo resumos automáticos gerados por IA dentro do dashboard. Foi uma escolha consciente pra priorizar entregar bem o pipeline de dados e a automação mensal, que eram os requisitos centrais do desafio, dentro do prazo disponível.
 
 ## Estrutura
 
 Aneel_dados/
-├── atualizar_dados.py # pipeline completo (baixa, agrega, envia) — usado na automação
+├── atualizar_dados.py # pipeline completo (baixa, agrega, envia), usado na automação
 ├── carregar_municipios.py # popula a tabela de nomes de município via API do IBGE (roda uma vez)
 ├── explorar.py # script de exploração inicial dos dados
 ├── agregar.py # primeira versão da agregação (manual)
@@ -107,7 +78,7 @@ Aneel_dados/
 
 - Python 3.10+
 - Node.js 18+
-- Conta no [Supabase](https://supabase.com) (gratuita)
+- Conta no Supabase (gratuita): https://supabase.com
 
 ### 1. Clonar
 
@@ -197,8 +168,7 @@ language sql as $$
 $$;
 ```
 
-Em **Project Settings → Data API**, aumente o **Max Rows** (padrão 1000) para
-pelo menos 50000, para os scripts conseguirem ler a tabela inteira.
+Em Project Settings, Data API, aumente o Max Rows (padrão 1000) pra pelo menos 50000, pros scripts conseguirem ler a tabela inteira.
 
 ### 3. Rodar o pipeline (Python)
 
@@ -213,8 +183,8 @@ SUPABASE_KEY=sua_service_role_key
 
 
 ```bash
-python carregar_municipios.py   # popula os nomes de cidade (rodar uma vez)
-python atualizar_dados.py       # baixa, agrega e envia os dados de interrupção
+python carregar_municipios.py
+python atualizar_dados.py
 ```
 
 ### 4. Rodar o dashboard
@@ -236,13 +206,10 @@ npm run dev
 
 Acesse `http://localhost:3000`.
 
-### 5. Automação mensal (se for fazer fork/deploy próprio)
+### 5. Automação mensal (se for fazer fork ou deploy próprio)
 
-Configure os secrets `SUPABASE_URL` e `SUPABASE_KEY` em
-**Settings → Secrets and variables → Actions** do repositório. O workflow em
-`.github/workflows/atualizacao-mensal.yml` já está pronto pra rodar
-automaticamente ou ser disparado manualmente pela aba Actions.
+Configure os secrets `SUPABASE_URL` e `SUPABASE_KEY` em Settings, Secrets and variables, Actions, do repositório. O workflow em `.github/workflows/atualizacao-mensal.yml` já está pronto pra rodar automaticamente ou ser disparado manualmente pela aba Actions.
 
 ## Fonte dos dados
 
-[Interrupções de Energia Elétrica nas Redes de Distribuição](https://dadosabertos.aneel.gov.br/dataset/interrupcoes-de-energia-eletrica-nas-redes-de-distribuicao) — Portal de Dados Abertos da ANEEL.
+Interrupções de Energia Elétrica nas Redes de Distribuição, Portal de Dados Abertos da ANEEL: https://dadosabertos.aneel.gov.br/dataset/interrupcoes-de-energia-eletrica-nas-redes-de-distribuicao
