@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import GraficoEvolucao from '@/components/GraficoEvolucao'
+import GraficoCausas from '@/components/GraficoCausas'
+import TabelaRanking from '@/components/TabelaRanking'
 
 interface LinhaResumo {
   id: number
@@ -21,9 +23,9 @@ interface Municipio {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string }>
+  searchParams: Promise<{ busca?: string; mes?: string }>
 }) {
-  const { busca } = await searchParams
+  const { busca, mes } = await searchParams
 
   const { data: municipiosData } = await supabase
     .from('municipios')
@@ -34,6 +36,16 @@ export default async function Home({
     (municipiosData ?? []).map((m) => [m.cod_municipio_ibge, m])
   )
 
+  // Busca os meses disponíveis, pra popular o <select>
+  const { data: mesesRaw } = await supabase
+    .from('resumo_interrupcoes')
+    .select('ano_mes')
+    .order('ano_mes', { ascending: false })
+
+  const mesesDisponiveis = Array.from(
+    new Set((mesesRaw as { ano_mes: string }[] | null)?.map((l) => l.ano_mes) ?? [])
+  )
+
   const codigosPorNome = busca
     ? (municipiosData ?? [])
         .filter((m) => m.nome.toLowerCase().includes(busca.toLowerCase()))
@@ -41,28 +53,54 @@ export default async function Home({
     : []
 
   function aplicarFiltro(q: any) {
-    if (!busca) return q
-    if (codigosPorNome.length > 0) {
-      return q.or(
-        `nome_distribuidora.ilike.%${busca}%,cod_municipio_ibge.in.(${codigosPorNome.join(',')})`
-      )
+    let query = q
+    if (busca) {
+      if (codigosPorNome.length > 0) {
+        query = query.or(
+          `nome_distribuidora.ilike.%${busca}%,cod_municipio_ibge.in.(${codigosPorNome.join(',')})`
+        )
+      } else {
+        query = query.ilike('nome_distribuidora', `%${busca}%`)
+      }
     }
-    return q.ilike('nome_distribuidora', `%${busca}%`)
+    if (mes) {
+      query = query.eq('ano_mes', mes)
+    }
+    return query
   }
 
   const { data: dataRaw, error } = await aplicarFiltro(
-  supabase.from('resumo_interrupcoes').select('*')
-)
-  .order('num_interrupcoes', { ascending: false })
-  .limit(50)
+    supabase.from('resumo_interrupcoes').select('*')
+  )
+    .order('num_interrupcoes', { ascending: false })
+    .limit(50)
 
   const data = dataRaw as LinhaResumo[] | null
 
-  const { data: dadosParaGraficoRaw } = await aplicarFiltro(
-  supabase.from('resumo_interrupcoes').select('ano_mes, num_interrupcoes')
-).limit(5000)
+  // Gráfico de evolução agora vem direto da função SQL (muito mais rápido)
+  const { data: pontosGraficoRaw } = await supabase.rpc('evolucao_mensal', {
+    filtro: busca || null,
+    mes: mes || null,
+  })
+  const { data: piores } = await supabase.rpc('ranking_piores', {
+  filtro: busca || null,
+  mes: mes || null,
+  limite: 5,
+  })
 
-  const dadosParaGrafico = dadosParaGraficoRaw as { ano_mes: string; num_interrupcoes: number }[] | null
+const { data: melhores } = await supabase.rpc('ranking_melhores', {
+  filtro: busca || null,
+  mes: mes || null,
+  limite: 5,
+  })
+
+const { data: causasRaw } = await supabase.rpc('distribuicao_causas', {
+  filtro: busca || null,
+  mes: mes || null,
+  })
+const causas = (causasRaw as { causa: string; total: number }[] | null) ?? []
+  const pontosGrafico = (pontosGraficoRaw as { ano_mes: string; total_interrupcoes: number }[] | null ?? [])
+    .map((p) => ({ mes: p.ano_mes, interrupcoes: p.total_interrupcoes }))
 
   if (error) {
     return <div className="p-8 text-red-600">Erro ao buscar dados: {error.message}</div>
@@ -75,15 +113,6 @@ export default async function Home({
   const duracaoMedia = linhas.length > 0
     ? Math.round(linhas.reduce((soma: number, l: LinhaResumo) => soma + l.duracao_media_minutos, 0) / linhas.length)
     : 0
-
-  const somaPorMes = new Map<string, number>()
-  ;(dadosParaGrafico ?? []).forEach((linha: { ano_mes: string; num_interrupcoes: number }) => {
-    const atual = somaPorMes.get(linha.ano_mes) ?? 0
-    somaPorMes.set(linha.ano_mes, atual + linha.num_interrupcoes)
-  })
-  const pontosGrafico = Array.from(somaPorMes.entries())
-    .map(([mes, interrupcoes]) => ({ mes, interrupcoes }))
-    .sort((a, b) => a.mes.localeCompare(b.mes))
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 p-8">
@@ -99,6 +128,16 @@ export default async function Home({
             placeholder="Buscar por cidade ou distribuidora..."
             className="flex-1 border border-neutral-700 bg-neutral-900 px-4 py-2 rounded-lg focus:outline-none focus:border-neutral-500"
           />
+          <select
+            name="mes"
+            defaultValue={mes ?? ''}
+            className="border border-neutral-700 bg-neutral-900 px-4 py-2 rounded-lg"
+          >
+            <option value="">Todos os meses</option>
+            {mesesDisponiveis.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
           <button
             type="submit"
             className="px-4 py-2 bg-neutral-100 text-neutral-950 rounded-lg font-medium hover:bg-neutral-300 transition"
@@ -123,6 +162,12 @@ export default async function Home({
         </div>
 
         <GraficoEvolucao dados={pontosGrafico} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <TabelaRanking titulo="Piores (mais interrupções)" dados={(piores ?? []) as any} />
+          <TabelaRanking titulo="Melhores (menos interrupções)" dados={(melhores ?? []) as any} />
+        </div>
+
+        <GraficoCausas dados={causas} />
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
